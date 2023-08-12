@@ -1,127 +1,180 @@
-var bottom = 100
-var top = 200
-var particles = 2;
+// Contants for display
+var PIXEL_BOTTOM = 100
+var PIXEL_TOP = 200
+var PARTICLE_COUNT = 1;
+var DELTA_MIX = 0.01;
 
-var renderH = array(pixelCount);
-var renderS = array(pixelCount);
-var renderV = array(pixelCount);
+var finalHue = array(pixelCount);
+var finalSat = array(pixelCount);
+var finalVal = array(pixelCount);
 
 
-var position = array(particles);
-var direction = array(particles);
-var nextStep = array(particles);
-var age = array(particles);
-var lifespan = array(particles);
-var stepSpeed = array(particles);
+var targetH = array(pixelCount);
+var targetV = array(pixelCount);
 
-var hue = array(particles);
+var STATE_NORMAL = 1;
+var STATE_EXPLODING = 2;
+
+// Particle properties
+var _position = array(PARTICLE_COUNT);
+var _direction = array(PARTICLE_COUNT);
+var _nextStep = array(PARTICLE_COUNT);
+var _ageSeconds = array(PARTICLE_COUNT);
+var _lifespanSeconds = array(PARTICLE_COUNT);
+var _stepSpeed = array(PARTICLE_COUNT);
+var _state = array(PARTICLE_COUNT);
+var _hue = array(PARTICLE_COUNT);
+
+var EPSILON = 0.01;
 
 
 function spawnParticle(idx) {
-  direction[idx] = random(1) < 0.5 ? -1 : 1;
-  position[idx] = floor(random(pixelCount));
-  stepSpeed[idx] = 250 + random(500);
-  stepSpeed[idx] = 250 + random(500);
-  age[idx] = 0;
-  lifespan[idx] = 10000 + random(30000);
-  hue[idx] = random(1)
+  _direction[idx] = random(1) < 0.5 ? -1 : 1;
+  _position[idx] = floor(random(pixelCount));
+  _stepSpeed[idx] = 250 + random(500);
+  _stepSpeed[idx] = 250 + random(500);
+  _ageSeconds[idx] = 0;
+  _lifespanSeconds[idx] = 10 + random(30);
+  _hue[idx] = random(1)
+  _state[idx] = STATE_NORMAL;
 }
+
 function stepParticle(idx) {
-  if (random(10) < 9) {
-    position[idx] += 1 * direction[idx]; 
-  } else {
-    // Move up and right
-    position[idx] += 11 * direction[idx];
-  }
-  
-  if (position[idx] < bottom) {
-    direction[idx] = 1;
-  } else if (position[idx] > top) {
-    direction[idx] = -1;
+  if (_state[idx] == STATE_NORMAL) {
+    if (random(10) < 9) {
+      _position[idx] += 1 * _direction[idx]; 
+    } else {
+      // Move up and right
+      _position[idx] += 11 * _direction[idx];
+    }
+    
+    if (_position[idx] < PIXEL_BOTTOM) {
+      _direction[idx] = 1;
+    } else if (_position[idx] > PIXEL_TOP) {
+      _direction[idx] = -1;
+    }
   }
 }
 
-for (x = 0; x < particles; x++) {
+for (x = 0; x < PARTICLE_COUNT; x++) {
   spawnParticle(x);
 }
 
-function setupCollision() {
-  direction[0] = 1;
-  direction[1] = -1;
-  position[0] = 150;
-  position[1] = 170  ;
-}
-// setupCollision();
 
-
-function blendPixel(x, h2, v2) {
-  // @TODO: WIP
-    v = renderV[x]+v2
-    //rotate hues so that they are closer numerically
-    if (h2 - renderH[x] > .5)
-      h2 -= 1
-    if (renderH[x] - h2 > .5)
-      renderH[x] -= 1
-    //average the hues, weighted by brightness
-    renderH[x] = (renderH[x] * renderV[x] + h2 * v2) / v
-    renderV[x] = v;
+function mix(left, right, p) {
+  return left * (1 - p) + right * p;
 }
 
-function renderParticle(x, delta) {
-    blend = 1 - renderV[position[x]] / 2
-    brightness = delta * 0.005;
-    if (age[x] < 2500) {
-      brightness *= age[x] / 2500;
-    } else if (age[x] / lifespan[x]  > 0.9) {
-      brightness *= 1 - 10 * (age[x] / lifespan[x] - 0.9)
-    }
+function addLight(x, h, b) {
+  if (x < 0 || x >= pixelCount) {
+    return;
+  }
+  
+  if (targetH[x] < 0) {
+    targetH[x] = h;
+  } else {
+    blend = 1 - targetV[x] / 2
+    targetH[x] = mix(targetH[x], h, blend);
+  }
+  targetV[x] = min(1, finalVal[x] + b);
+}
+
+function renderParticle(x) {
 
     // Check for collisions after rendering it
     collided = false;
-    for (c = 0; c < particles; c++) {
-      if (c != x && abs(position[c] - position[x]) < 0.1) {
+    for (c = 0; c < PARTICLE_COUNT; c++) {
+      if (c != x && abs(_position[c] - _position[x]) < 0.1) {
         collided = true;
-        for (px = max(0, position[c] - 5); px < min(pixelCount-1, position[c] + 5); px++) {
-         renderH[px] = mix(renderH[px], 0, delta / 1000);
-         renderV[px] = mix(renderV[px], 1, brightness);
-         renderS[px] = 1;
-        }
-        // Let the particles die in the next five seconds
-        direction[c] = 0;
-        direction[x] = 0;
-        lifespan[c] = min(lifespan[c], age[c] + 2000 + random(3000));
-        lifespan[x] = min(lifespan[x], age[x] + 2000 + random(3000));
+        
+        // Reset PARTICLE_COUNT _ageSeconds in an exploding _state
+        _state[c] = STATE_EXPLODING;
+        _state[x] = STATE_EXPLODING;
+        _ageSeconds[c] = 0;
+        _ageSeconds[x] = 0;
+        _lifespanSeconds[c] = min(_lifespanSeconds[c], 2 + random(3));
+        _lifespanSeconds[x] = min(_lifespanSeconds[x], 2 + random(3));
       }
     }
-    if (!collided) {
-      renderH[position[x]] = mix(renderH[position[x]], hue[x], blend);
-      renderS[position[x]] = 1;
-      renderV[position[x]] = min(1, renderV[position[x]] + brightness);
+    
+    if (_state[x] == STATE_NORMAL) {
+      brightness = 1;
+      if (_ageSeconds[x] < 2) {
+        brightness *= _ageSeconds[x] / 2;
+      } else if (_ageSeconds[x] / _lifespanSeconds[x]  > 0.9) {
+        brightness *= 1 - 10 * (_ageSeconds[x] / _lifespanSeconds[x] - 0.9)
+      }
+
+      
+      addLight(_position[x], _hue[x], brightness);
+    } else if (_state[x] == STATE_EXPLODING) {
+      if (_ageSeconds[x] < 0.5) {
+        brightness = sin(PI * _ageSeconds[x]);
+      } else {
+        brightness = sin(PI * (0.5 + (_ageSeconds[x] - 0.5) / _lifespanSeconds[x]));
+      }
+      
+      for (offset = 0; offset < 3; offset += 1) {
+        addLight(_position[x] + offset, 0, brightness);
+        if (offset > 0) {
+          addLight(_position[x] - offset, 0, brightness);
+        }
+        brightness /= 2;
+      }
     }
 }
+/* 
+
+function blendPixel(x, h2, v2) {
+  // @TODO: WIP
+    v = finalVal[x]+v2
+    //rotate hues so that they are closer numerically
+    if (h2 - finalHue[x] > .5)
+      h2 -= 1
+    if (finalHue[x] - h2 > .5)
+      finalHue[x] -= 1
+    //averageSeconds the hues, weighted by brightness
+    finalHue[x] = (finalHue[x] * finalVal[x] + h2 * v2) / v
+    finalVal[x] = v;
+}
+*/
 export function beforeRender(delta) {
+    deltaSeconds = delta / 1000;
   for (x = 0; x < pixelCount; x++) {
-    renderV[x] = mix(renderV[x], 0, delta / 100);
+    targetH[x] = -1
+    finalSat[x] = 1;
+    targetV[x] = 0;
   }
   
-  for (x = 0; x < particles; x++) {
-    age[x] += delta;
-    if (age[x] >= lifespan[x]) {
+  for (x = 0; x < PARTICLE_COUNT; x++) {
+    _ageSeconds[x] += deltaSeconds;
+    if (_ageSeconds[x] >= _lifespanSeconds[x]) {
       spawnParticle(x);
     }
-    if (nextStep[x] < delta) {
+    if (_nextStep[x] < delta) {
       stepParticle(x);
-      nextStep[x] = stepSpeed[x];
+      _nextStep[x] = _stepSpeed[x];
     } else {
-      nextStep[x] -= delta;
+      _nextStep[x] -= delta;
     }
   }
     
-  for (x = 0; x < particles; x++) {
-    renderParticle(x, delta);
+  for (x = 0; x < PARTICLE_COUNT; x++) {
+    renderParticle(x);
+  }
+  
+  for (x = 0; x < pixelCount; x++) {
+    if (targetH[x] >= 0 && targetV[x] >= EPSILON) {
+      if (finalVal[x] < EPSILON) {
+        finalHue[x] = targetH[x];
+      } else {
+        finalHue[x] = mix(finalHue[x], targetH[x], delta * DELTA_MIX);
+      }
+    }
+    finalVal[x] = mix(finalVal[x], targetV[x], delta * DELTA_MIX);
   }
 }
 
 export function render(index) {
-  hsv(renderH[index], renderS[index], renderV[index])
+  hsv(finalHue[index], finalSat[index], finalVal[index])
 }
