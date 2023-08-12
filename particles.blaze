@@ -1,8 +1,9 @@
 // Contants for display
 var PIXEL_BOTTOM = 100;
 var PIXEL_TOP = 200;
-var PARTICLE_COUNT = 1;
+var PARTICLE_COUNT = 2;
 var DELTA_MIX = 0.01;
+var FADE_SPEED = 0.002;
 
 var finalHue = array(pixelCount);
 var finalSat = array(pixelCount);
@@ -15,13 +16,13 @@ var STATE_NORMAL = 1;
 var STATE_EXPLODING = 2;
 
 // Particle properties
-var _position = array(PARTICLE_COUNT);
-var _direction = array(PARTICLE_COUNT);
+export var _position = array(PARTICLE_COUNT);
+export var _direction = array(PARTICLE_COUNT);
 var _nextStep = array(PARTICLE_COUNT);
-var _ageSeconds = array(PARTICLE_COUNT);
-var _lifespanSeconds = array(PARTICLE_COUNT);
+export var _ageSeconds = array(PARTICLE_COUNT);
+export var _lifespanSeconds = array(PARTICLE_COUNT);
 var _stepSpeed = array(PARTICLE_COUNT);
-var _state = array(PARTICLE_COUNT);
+export var _state = array(PARTICLE_COUNT);
 var _hue = array(PARTICLE_COUNT);
 
 var EPSILON = 0.01;
@@ -29,8 +30,12 @@ var EPSILON = 0.01;
 function spawnParticle(idx) {
   _direction[idx] = random(1) < 0.5 ? -1 : 1;
   _position[idx] = floor(random(pixelCount));
-  _stepSpeed[idx] = 250 + random(500);
-  _stepSpeed[idx] = 250 + random(500);
+  if (random(1) < 0.02) {
+    // 2% chance of speed demon
+    _stepSpeed[idx] = 25 + random(25);
+  } else {
+    _stepSpeed[idx] = 250 + random(250);
+  }
   _ageSeconds[idx] = 0;
   _lifespanSeconds[idx] = 10 + random(30);
   _hue[idx] = random(1);
@@ -77,22 +82,6 @@ function addLight(x, h, b) {
 }
 
 function renderParticle(x) {
-  // Check for collisions after rendering it
-  collided = false;
-  for (c = 0; c < PARTICLE_COUNT; c++) {
-    if (c != x && abs(_position[c] - _position[x]) < 0.1) {
-      collided = true;
-
-      // Reset PARTICLE_COUNT _ageSeconds in an exploding _state
-      _state[c] = STATE_EXPLODING;
-      _state[x] = STATE_EXPLODING;
-      _ageSeconds[c] = 0;
-      _ageSeconds[x] = 0;
-      _lifespanSeconds[c] = min(_lifespanSeconds[c], 2 + random(3));
-      _lifespanSeconds[x] = min(_lifespanSeconds[x], 2 + random(3));
-    }
-  }
-
   if (_state[x] == STATE_NORMAL) {
     brightness = 1;
     if (_ageSeconds[x] < 2) {
@@ -111,7 +100,7 @@ function renderParticle(x) {
       );
     }
 
-    for (offset = 0; offset < 3; offset += 1) {
+    for (offset = 0; offset < 5; offset += 1) {
       addLight(_position[x] + offset, 0, brightness);
       if (offset > 0) {
         addLight(_position[x] - offset, 0, brightness);
@@ -135,6 +124,20 @@ function blendPixel(x, h2, v2) {
     finalVal[x] = v;
 }
 */
+
+export function collision(idx) {
+  // Reset PARTICLE_COUNT _ageSeconds in an exploding _state
+  if (_state[idx] == STATE_NORMAL) {
+    _ageSeconds[idx] = 0;
+    _state[idx] = STATE_EXPLODING;
+    _lifespanSeconds[idx] = 2 + random(3);
+  }
+  if (_state[x] == STATE_NORMAL) {
+    _state[x] = STATE_EXPLODING;
+    _ageSeconds[x] = 0;
+    _lifespanSeconds[x] = 2 + random(3);
+  }
+}
 export function beforeRender(delta) {
   deltaSeconds = delta / 1000;
 
@@ -158,6 +161,15 @@ export function beforeRender(delta) {
   }
 
   for (x = 0; x < PARTICLE_COUNT; x++) {
+    for (c = 0; c < PARTICLE_COUNT; c++) {
+      if (c != x && abs(_position[c] - _position[x]) < 0.1) {
+        collision(c);
+        collision(x);
+      }
+    }
+  }
+
+  for (x = 0; x < PARTICLE_COUNT; x++) {
     renderParticle(x);
   }
 
@@ -170,7 +182,13 @@ export function beforeRender(delta) {
         finalHue[x] = mix(finalHue[x], targetH[x], delta * DELTA_MIX);
       }
     }
-    finalVal[x] = mix(finalVal[x], targetV[x], delta * DELTA_MIX);
+
+    // Get bright instantly, fade out slowly
+    if (targetV[x] >= finalVal[x]) {
+      finalVal[x] = targetV[x];
+    } else {
+      finalVal[x] = max(targetV[x], finalVal[x] - delta * FADE_SPEED);
+    }
   }
 }
 
