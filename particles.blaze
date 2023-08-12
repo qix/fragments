@@ -1,0 +1,127 @@
+var bottom = 100
+var top = 200
+var particles = 2;
+
+var renderH = array(pixelCount);
+var renderS = array(pixelCount);
+var renderV = array(pixelCount);
+
+
+var position = array(particles);
+var direction = array(particles);
+var nextStep = array(particles);
+var age = array(particles);
+var lifespan = array(particles);
+var stepSpeed = array(particles);
+
+var hue = array(particles);
+
+
+function spawnParticle(idx) {
+  direction[idx] = random(1) < 0.5 ? -1 : 1;
+  position[idx] = floor(random(pixelCount));
+  stepSpeed[idx] = 250 + random(500);
+  stepSpeed[idx] = 250 + random(500);
+  age[idx] = 0;
+  lifespan[idx] = 10000 + random(30000);
+  hue[idx] = random(1)
+}
+function stepParticle(idx) {
+  if (random(10) < 9) {
+    position[idx] += 1 * direction[idx]; 
+  } else {
+    // Move up and right
+    position[idx] += 11 * direction[idx];
+  }
+  
+  if (position[idx] < bottom) {
+    direction[idx] = 1;
+  } else if (position[idx] > top) {
+    direction[idx] = -1;
+  }
+}
+
+for (x = 0; x < particles; x++) {
+  spawnParticle(x);
+}
+
+function setupCollision() {
+  direction[0] = 1;
+  direction[1] = -1;
+  position[0] = 150;
+  position[1] = 170  ;
+}
+// setupCollision();
+
+
+function blendPixel(x, h2, v2) {
+  // @TODO: WIP
+    v = renderV[x]+v2
+    //rotate hues so that they are closer numerically
+    if (h2 - renderH[x] > .5)
+      h2 -= 1
+    if (renderH[x] - h2 > .5)
+      renderH[x] -= 1
+    //average the hues, weighted by brightness
+    renderH[x] = (renderH[x] * renderV[x] + h2 * v2) / v
+    renderV[x] = v;
+}
+
+function renderParticle(x, delta) {
+    blend = 1 - renderV[position[x]] / 2
+    brightness = delta * 0.005;
+    if (age[x] < 2500) {
+      brightness *= age[x] / 2500;
+    } else if (age[x] / lifespan[x]  > 0.9) {
+      brightness *= 1 - 10 * (age[x] / lifespan[x] - 0.9)
+    }
+
+    // Check for collisions after rendering it
+    collided = false;
+    for (c = 0; c < particles; c++) {
+      if (c != x && abs(position[c] - position[x]) < 0.1) {
+        collided = true;
+        for (px = max(0, position[c] - 5); px < min(pixelCount-1, position[c] + 5); px++) {
+         renderH[px] = mix(renderH[px], 0, delta / 1000);
+         renderV[px] = mix(renderV[px], 1, brightness);
+         renderS[px] = 1;
+        }
+        // Let the particles die in the next five seconds
+        direction[c] = 0;
+        direction[x] = 0;
+        lifespan[c] = min(lifespan[c], age[c] + 2000 + random(3000));
+        lifespan[x] = min(lifespan[x], age[x] + 2000 + random(3000));
+      }
+    }
+    if (!collided) {
+      renderH[position[x]] = mix(renderH[position[x]], hue[x], blend);
+      renderS[position[x]] = 1;
+      renderV[position[x]] = min(1, renderV[position[x]] + brightness);
+    }
+}
+export function beforeRender(delta) {
+  for (x = 0; x < pixelCount; x++) {
+    renderV[x] = mix(renderV[x], 0, delta / 100);
+  }
+  
+  for (x = 0; x < particles; x++) {
+    age[x] += delta;
+    if (age[x] >= lifespan[x]) {
+      spawnParticle(x);
+    }
+    if (nextStep[x] < delta) {
+      stepParticle(x);
+      nextStep[x] = stepSpeed[x];
+    } else {
+      nextStep[x] -= delta;
+    }
+  }
+    
+  for (x = 0; x < particles; x++) {
+    renderParticle(x, delta);
+  }
+}
+
+export function render(index) {
+  hsv(renderH[index], renderS[index], renderV[index])
+}

@@ -1,0 +1,6 @@
+
+export function render2D(index, x, y) {
+  if (x < 0.1) {
+    hsv(x, 1, 1);
+  }
+}
