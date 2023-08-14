@@ -5,12 +5,18 @@ var PARTICLE_COUNT = 2;
 var DELTA_MIX = 0.01;
 var FADE_SPEED = 0.002;
 
+// Debugging tools
+var SHOW_TOP_BOTTOM = false;
+
+// Would move up and to the right
+var ROW_JUMP_PIXELS = 11;
+
 var finalHue = array(pixelCount);
 var finalSat = array(pixelCount);
 var finalVal = array(pixelCount);
 
-var targetH = array(pixelCount);
-var targetV = array(pixelCount);
+var targetHue = array(pixelCount);
+var targetVal = array(pixelCount);
 
 var STATE_NORMAL = 1;
 var STATE_EXPLODING = 2;
@@ -18,18 +24,18 @@ var STATE_EXPLODING = 2;
 // Particle properties
 export var _position = array(PARTICLE_COUNT);
 export var _direction = array(PARTICLE_COUNT);
-var _nextStep = array(PARTICLE_COUNT);
+export var _nextStep = array(PARTICLE_COUNT);
 export var _ageSeconds = array(PARTICLE_COUNT);
 export var _lifespanSeconds = array(PARTICLE_COUNT);
-var _stepSpeed = array(PARTICLE_COUNT);
+export var _stepSpeed = array(PARTICLE_COUNT);
 export var _state = array(PARTICLE_COUNT);
-var _hue = array(PARTICLE_COUNT);
+export var _hue = array(PARTICLE_COUNT);
 
 var EPSILON = 0.01;
 
 function spawnParticle(idx) {
   _direction[idx] = random(1) < 0.5 ? -1 : 1;
-  _position[idx] = floor(random(pixelCount));
+  _position[idx] = PIXEL_BOTTOM + floor(random(PIXEL_TOP - PIXEL_BOTTOM + 1));
   if (random(1) < 0.02) {
     // 2% chance of speed demon
     _stepSpeed[idx] = 25 + random(25);
@@ -44,17 +50,16 @@ function spawnParticle(idx) {
 
 function stepParticle(idx) {
   if (_state[idx] == STATE_NORMAL) {
+    if (_position[idx] <= PIXEL_BOTTOM && direction < 0) {
+      _direction[idx] = 1;
+    } else if (_position[idx] >= PIXEL_TOP && direction > 0) {
+      _direction[idx] = -1;
+    }
+
     if (random(10) < 9) {
       _position[idx] += 1 * _direction[idx];
     } else {
-      // Move up and right
-      _position[idx] += 11 * _direction[idx];
-    }
-
-    if (_position[idx] < PIXEL_BOTTOM) {
-      _direction[idx] = 1;
-    } else if (_position[idx] > PIXEL_TOP) {
-      _direction[idx] = -1;
+      _position[idx] += ROW_JUMP_PIXELS * _direction[idx];
     }
   }
 }
@@ -72,13 +77,13 @@ function addLight(x, h, b) {
     return;
   }
 
-  if (targetH[x] < 0) {
-    targetH[x] = h;
+  if (targetHue[x] < 0) {
+    targetHue[x] = h;
   } else {
-    blend = 1 - targetV[x] / 2;
-    targetH[x] = mix(targetH[x], h, blend);
+    blend = 1 - targetVal[x] / 2;
+    targetHue[x] = mix(targetHue[x], h, blend);
   }
-  targetV[x] = min(1, finalVal[x] + b);
+  targetVal[x] = min(1, finalVal[x] + b);
 }
 
 function renderParticle(x) {
@@ -142,9 +147,9 @@ export function beforeRender(delta) {
   deltaSeconds = delta / 1000;
 
   for (x = 0; x < pixelCount; x++) {
-    targetH[x] = -1;
+    targetHue[x] = -1;
     finalSat[x] = 1;
-    targetV[x] = 0;
+    targetVal[x] = 0;
   }
 
   for (x = 0; x < PARTICLE_COUNT; x++) {
@@ -174,21 +179,31 @@ export function beforeRender(delta) {
   }
 
   for (x = 0; x < pixelCount; x++) {
-    if (targetH[x] >= 0 && targetV[x] >= EPSILON) {
+    if (targetHue[x] >= 0 && targetVal[x] >= EPSILON) {
       // @todo better blend, but if the light is off just switch hue
       if (finalVal[x] < EPSILON) {
-        finalHue[x] = targetH[x];
+        finalHue[x] = targetHue[x];
       } else {
-        finalHue[x] = mix(finalHue[x], targetH[x], delta * DELTA_MIX);
+        finalHue[x] = mix(finalHue[x], targetHue[x], delta * DELTA_MIX);
       }
     }
 
     // Get bright instantly, fade out slowly
-    if (targetV[x] >= finalVal[x]) {
-      finalVal[x] = targetV[x];
+    if (targetVal[x] >= finalVal[x]) {
+      finalVal[x] = targetVal[x];
     } else {
-      finalVal[x] = max(targetV[x], finalVal[x] - delta * FADE_SPEED);
+      finalVal[x] = max(targetVal[x], finalVal[x] - delta * FADE_SPEED);
     }
+  }
+
+  if (SHOW_TOP_BOTTOM) {
+    finalHue[PIXEL_TOP] = time(0.015);
+    finalSat[PIXEL_TOP] = 1;
+    finalVal[PIXEL_TOP] = 1;
+
+    finalHue[PIXEL_BOTTOM] = (finalHue[PIXEL_TOP] + 0.5) % 1.0;
+    finalSat[PIXEL_BOTTOM] = 1;
+    finalVal[PIXEL_BOTTOM] = 1;
   }
 }
 
