@@ -44,15 +44,23 @@ function spawnParticle(idx) {
   }
   _ageSeconds[idx] = 0;
   _lifespanSeconds[idx] = 10 + random(30);
-  _hue[idx] = random(1);
+
+  // 90% of the time we use a matching color from the color wheel
+  if (idx == 1 && random(1) < 0.9) {
+    wheel = 3 + floor(random(4));
+    _hue[idx] = (_hue[0] + wheel/12) % 1;
+  } else {
+    _hue[idx] = random(1);
+  }
+
   _state[idx] = STATE_NORMAL;
 }
 
 function stepParticle(idx) {
   if (_state[idx] == STATE_NORMAL) {
-    if (_position[idx] <= PIXEL_BOTTOM && direction < 0) {
+    if (_position[idx] <= PIXEL_BOTTOM && _direction[idx] < 0) {
       _direction[idx] = 1;
-    } else if (_position[idx] >= PIXEL_TOP && direction > 0) {
+    } else if (_position[idx] >= PIXEL_TOP && _direction[idx] > 0) {
       _direction[idx] = -1;
     }
 
