@@ -1,9 +1,20 @@
 // Contants for display
 var PIXEL_BOTTOM = 100;
 var PIXEL_TOP = 200;
-var PARTICLE_COUNT = 2;
 var DELTA_MIX = 0.01;
-var FADE_SPEED = 0.002;
+
+// Speeds
+var BRIGHT_PER_SECOND = 3;
+var FADE_PER_SECOND = 1;
+
+var PARTICLE_COUNT = 3;
+var DEFAULT_PARTICLES = 2;
+
+// Percentage chances of rare events
+var P_BONUS_SPAWN = 0.1;
+var P_COLOR_WHEEL = 0.9;
+var P_RAINBOW = 0;
+var P_DARK_BOUNCE = 1;
 
 // Debugging tools
 var SHOW_TOP_BOTTOM = false;
@@ -20,6 +31,7 @@ var targetVal = array(pixelCount);
 
 var STATE_NORMAL = 1;
 var STATE_EXPLODING = 2;
+var STATE_DEAD = 3;
 
 // Particle properties
 export var _position = array(PARTICLE_COUNT);
@@ -30,10 +42,15 @@ export var _lifespanSeconds = array(PARTICLE_COUNT);
 export var _stepSpeed = array(PARTICLE_COUNT);
 export var _state = array(PARTICLE_COUNT);
 export var _hue = array(PARTICLE_COUNT);
+export var _flags = array(PARTICLE_COUNT);
+
+var FLAG_RAINBOW = 1;
+var FLAG_DARK_BOUNCE = 2;
 
 var EPSILON = 0.01;
 
 function spawnParticle(idx) {
+  _flags[idx] = 0;
   _direction[idx] = random(1) < 0.5 ? -1 : 1;
   _position[idx] = PIXEL_BOTTOM + floor(random(PIXEL_TOP - PIXEL_BOTTOM + 1));
   if (random(1) < 0.02) {
@@ -46,14 +63,41 @@ function spawnParticle(idx) {
   _lifespanSeconds[idx] = 10 + random(30);
 
   // 90% of the time we use a matching color from the color wheel
-  if (idx == 1 && random(1) < 0.9) {
+  if (idx == 1 && random(1) < P_COLOR_WHEEL) {
     wheel = 3 + floor(random(4));
     _hue[idx] = (_hue[0] + wheel/12) % 1;
   } else {
     _hue[idx] = random(1);
   }
+  
+  if (random(1) < P_RAINBOW) {
+    _flags[idx] |= FLAG_RAINBOW;
+  } 
+  if (random(1) < P_DARK_BOUNCE) {
+    _flags[idx] |= FLAG_DARK_BOUNCE;
+  }
 
   _state[idx] = STATE_NORMAL;
+}
+
+function particleDied(idx) {
+  // Don't respawn extra particles
+  if (idx >= DEFAULT_PARTICLES) {
+    _state[idx] = STATE_DEAD;
+    return;
+  }
+  
+  spawnParticle(idx);
+  
+  // Sometimes when the last particle died, occasionally spawn a bonus particle
+  if (
+    idx == DEFAULT_PARTICLES-1 &&
+    PARTICLE_COUNT > DEFAULT_PARTICLES &&
+    _state[idx + 1] == STATE_DEAD &&
+    random(1) < P_BONUS_SPAWN
+  ) {
+    spawnParticle(idx + 1);  
+  }
 }
 
 function stepParticle(idx) {
@@ -72,8 +116,11 @@ function stepParticle(idx) {
   }
 }
 
-for (x = 0; x < PARTICLE_COUNT; x++) {
+for (x = 0; x < DEFAULT_PARTICLES; x++) {
   spawnParticle(x);
+}
+for (x = DEFAULT_PARTICLES; x < PARTICLE_COUNT; x++) {
+  _state[x] = STATE_DEAD;
 }
 
 function mix(left, right, p) {
@@ -94,13 +141,30 @@ function addLight(x, h, b) {
   targetVal[x] = min(1, finalVal[x] + b);
 }
 
-function renderParticle(x) {
-  if (_state[x] == STATE_NORMAL) {
-    brightness = 1;
+function renderParticle(x, newStep, deltaSeconds) {
+  if (!newStep) {
+    // return;
+  }
+  if (_state[x] == STATE_DEAD) {
+    return;
+  } else if (_state[x] == STATE_NORMAL) {
+    if (newStep) {
+      brightness = 1;
+    } else {
+      brightness = deltaSeconds * BRIGHT_PER_SECOND;
+    }
+    
+    
     if (_ageSeconds[x] < 2) {
       brightness *= _ageSeconds[x] / 2;
     } else if (_ageSeconds[x] / _lifespanSeconds[x] > 0.9) {
       brightness *= 1 - 10 * (_ageSeconds[x] / _lifespanSeconds[x] - 0.9);
+    }
+    
+    
+    if (_flags[x] & FLAG_DARK_BOUNCE) {
+      // @todo: Figure out dark bounce
+      // brightness *= triangle(0.015);
     }
 
     addLight(_position[x], _hue[x], brightness);
@@ -114,9 +178,9 @@ function renderParticle(x) {
     }
 
     for (offset = 0; offset < 5; offset += 1) {
-      addLight(_position[x] + offset, 0, brightness);
+      addLight(_position[x] + offset, _hue[x], brightness);
       if (offset > 0) {
-        addLight(_position[x] - offset, 0, brightness);
+        addLight(_position[x] - offset, _hue[x], brightness);
       }
       brightness /= 2;
     }
@@ -138,17 +202,13 @@ function blendPixel(x, h2, v2) {
 }
 */
 
-export function collision(idx) {
+export function collision(idx, with_idx) {
   // Reset PARTICLE_COUNT _ageSeconds in an exploding _state
   if (_state[idx] == STATE_NORMAL) {
+    _hue[idx] = (_hue[idx] + _hue[with_idx]) / 2;
     _ageSeconds[idx] = 0;
     _state[idx] = STATE_EXPLODING;
     _lifespanSeconds[idx] = 2 + random(3);
-  }
-  if (_state[x] == STATE_NORMAL) {
-    _state[x] = STATE_EXPLODING;
-    _ageSeconds[x] = 0;
-    _lifespanSeconds[x] = 2 + random(3);
   }
 }
 export function beforeRender(delta) {
@@ -163,10 +223,14 @@ export function beforeRender(delta) {
   for (x = 0; x < PARTICLE_COUNT; x++) {
     _ageSeconds[x] += deltaSeconds;
     if (_ageSeconds[x] >= _lifespanSeconds[x]) {
-      spawnParticle(x);
+      particleDied(x);
+    }
+    if (_flags[x] & FLAG_RAINBOW) {
+      _hue[x] = mod(_hue[x] + deltaSeconds * 0.1, 1);
     }
     if (_nextStep[x] < delta) {
       stepParticle(x);
+      renderParticle(x, true);
       _nextStep[x] = _stepSpeed[x];
     } else {
       _nextStep[x] -= delta;
@@ -174,16 +238,22 @@ export function beforeRender(delta) {
   }
 
   for (x = 0; x < PARTICLE_COUNT; x++) {
+    if (_state[x] == STATE_DEAD) {
+      continue;
+    }
     for (c = 0; c < PARTICLE_COUNT; c++) {
+      if (_state[c] == STATE_DEAD) {
+        continue;
+      }
       if (c != x && abs(_position[c] - _position[x]) < 0.1) {
-        collision(c);
-        collision(x);
+        collision(c, x);
+        collision(x, c);
       }
     }
   }
 
   for (x = 0; x < PARTICLE_COUNT; x++) {
-    renderParticle(x);
+    renderParticle(x, false, deltaSeconds);
   }
 
   for (x = 0; x < pixelCount; x++) {
@@ -200,7 +270,7 @@ export function beforeRender(delta) {
     if (targetVal[x] >= finalVal[x]) {
       finalVal[x] = targetVal[x];
     } else {
-      finalVal[x] = max(targetVal[x], finalVal[x] - delta * FADE_SPEED);
+      finalVal[x] = max(targetVal[x], finalVal[x] - deltaSeconds * FADE_PER_SECOND);
     }
   }
 
